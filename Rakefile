@@ -9,4 +9,11 @@ require "rubocop/rake_task"
 
 RuboCop::RakeTask.new
 
+begin
+  require "yard"
+  YARD::Rake::YardocTask.new
+rescue LoadError
+  # YARD not available
+end
+
 task default: %i[test rubocop]
