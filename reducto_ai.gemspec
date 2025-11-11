@@ -17,8 +17,10 @@ Gem::Specification.new do |spec|
 
   spec.metadata["rubygems_mfa_required"] = "true"
   spec.metadata["homepage_uri"] = spec.homepage
+  spec.metadata["documentation_uri"] = "https://rubydoc.info/gems/reducto_ai"
   spec.metadata["source_code_uri"] = "https://github.com/dpaluy/reducto_ai"
   spec.metadata["changelog_uri"] = "https://github.com/dpaluy/reducto_ai/blob/main/CHANGELOG.md"
+  spec.metadata["bug_tracker_uri"] = "https://github.com/dpaluy/reducto_ai/issues"
 
   # Specify which files should be added to the gem when it is released.
   # The `git ls-files -z` loads the files in the RubyGem that have been added into git.
@@ -32,6 +34,9 @@ Gem::Specification.new do |spec|
   spec.bindir = "exe"
   spec.executables = spec.files.grep(%r{\Aexe/}) { |f| File.basename(f) }
   spec.require_paths = ["lib"]
+
+  # Include documentation files
+  spec.extra_rdoc_files = Dir["README.md", "CHANGELOG.md", "LICENSE.txt"]
 
   spec.add_dependency "faraday", "~> 2.9"
   spec.add_dependency "faraday-multipart", "~> 1.0"
