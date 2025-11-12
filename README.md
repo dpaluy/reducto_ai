@@ -3,7 +3,7 @@
 Ruby wrapper on [ReductoAI API](https://docs.reducto.ai/api-reference)
 
 [![Gem Version](https://badge.fury.io/rb/reducto_ai.svg)](https://badge.fury.io/rb/reducto_ai)
-
+[![ci](https://github.com/dpaluy/reducto_ai/actions/workflows/ci.yml/badge.svg)](https://github.com/dpaluy/reducto_ai/actions/workflows/ci.yml)
 ## Installation
 
 ```
