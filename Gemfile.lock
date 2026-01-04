@@ -35,7 +35,8 @@ GEM
     language_server-protocol (3.17.0.5)
     lint_roller (1.1.0)
     logger (1.7.0)
-    minitest (5.26.2)
+    minitest (6.0.1)
+      prism (~> 1.5)
     multipart-post (2.4.1)
     net-http (0.6.0)
       uri
@@ -95,7 +96,7 @@ PLATFORMS
 
 DEPENDENCIES
   irb
-  minitest (~> 5.26)
+  minitest (~> 6.0)
   rake (~> 13.0)
   reducto_ai!
   rubocop (~> 1.82)
