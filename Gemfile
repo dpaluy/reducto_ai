@@ -14,5 +14,5 @@ gem "rubocop", "~> 1.85"
 gem "yard", "~> 0.9"
 
 group :test do
-  gem "webmock", "~> 3.23"
+  gem "webmock", "~> 3.26"
 end
