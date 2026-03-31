@@ -54,7 +54,7 @@ class ResourcesTest < Minitest::Test
 
   def test_parse_async_with_async_flag
     stub = stub_request(:post, "https://api.example.com/parse_async")
-           .with(body: { input: "test", async: true }.to_json)
+           .with(body: { input: "test", async: {} }.to_json)
            .to_return(status: 200, body: { job_id: "123" }.to_json)
 
     @client.parse.async(input: "test", async: true)
@@ -242,25 +242,37 @@ class ResourcesTest < Minitest::Test
 
   def test_jobs_list
     stub = stub_request(:get, "https://api.example.com/jobs")
-           .to_return(status: 200, body: [].to_json)
+           .to_return(status: 200, body: { results: [], next_cursor: nil }.to_json)
 
-    @client.jobs.list
+    response = @client.jobs.list
     assert_requested stub
+    assert_equal [], response["results"]
   end
 
   def test_jobs_list_with_params
     stub = stub_request(:get, "https://api.example.com/jobs")
-           .with(query: { status: "running", limit: 10 })
-           .to_return(status: 200, body: [].to_json)
+           .with(query: { status: "InProgress", limit: 10 })
+           .to_return(status: 200, body: { results: [], next_cursor: "cursor-1" }.to_json)
 
-    @client.jobs.list(status: "running", limit: 10)
+    response = @client.jobs.list(status: "InProgress", limit: 10)
     assert_requested stub
+    assert_equal "cursor-1", response["next_cursor"]
   end
 
   def test_jobs_cancel_requires_job_id
     assert_raises(ArgumentError) { @client.jobs.cancel(job_id: nil) }
     assert_raises(ArgumentError) { @client.jobs.cancel(job_id: "") }
     assert_raises(ArgumentError) { @client.jobs.cancel(job_id: "  ") }
+  end
+
+  def test_jobs_cancel_rejects_path_traversal
+    error = assert_raises(ArgumentError) { @client.jobs.cancel(job_id: "../admin/secret") }
+    assert_equal "job_id contains invalid characters", error.message
+  end
+
+  def test_jobs_retrieve_rejects_path_traversal
+    error = assert_raises(ArgumentError) { @client.jobs.retrieve(job_id: "../../etc/passwd") }
+    assert_equal "job_id contains invalid characters", error.message
   end
 
   def test_jobs_cancel
@@ -279,11 +291,11 @@ class ResourcesTest < Minitest::Test
 
   def test_jobs_retrieve
     stub = stub_request(:get, "https://api.example.com/job/job-456")
-           .to_return(status: 200, body: { id: "job-456", status: "complete" }.to_json)
+           .to_return(status: 200, body: { id: "job-456", status: "Completed" }.to_json)
 
     response = @client.jobs.retrieve(job_id: "job-456")
     assert_requested stub
-    assert_equal "complete", response["status"]
+    assert_equal "Completed", response["status"]
   end
 
   def test_jobs_upload_requires_file
@@ -327,11 +339,11 @@ class ResourcesTest < Minitest::Test
 
   def test_jobs_configure_webhook
     stub = stub_request(:post, "https://api.example.com/configure_webhook")
-           .to_return(status: 200, body: { configured: true }.to_json)
+           .to_return(status: 200, body: JSON.generate("https://dashboard.svix.com/portal"))
 
     response = @client.jobs.configure_webhook
     assert_requested stub
-    assert response["configured"]
+    assert_equal "https://dashboard.svix.com/portal", response
   end
 
   # Resource accessor tests
@@ -367,11 +379,11 @@ class ResourcesTest < Minitest::Test
   # Response parsing tests
   def test_parse_sync_returns_parsed_json
     stub_request(:post, "https://api.example.com/parse")
-      .to_return(status: 200, body: { job_id: "123", status: "complete" }.to_json)
+      .to_return(status: 200, body: { job_id: "123", status: "Completed" }.to_json)
 
     result = @client.parse.sync(input: "test")
     assert_equal "123", result["job_id"]
-    assert_equal "complete", result["status"]
+    assert_equal "Completed", result["status"]
   end
 
   def test_extract_sync_returns_result_array
@@ -383,22 +395,23 @@ class ResourcesTest < Minitest::Test
     assert_equal [{ "field" => "value" }], result["result"]
   end
 
-  def test_jobs_list_returns_array
+  def test_jobs_list_normalizes_array_response
     stub_request(:get, "https://api.example.com/jobs")
       .to_return(status: 200, body: [{ id: "job-1" }, { id: "job-2" }].to_json)
 
     result = @client.jobs.list
-    assert_equal 2, result.length
-    assert_equal "job-1", result[0]["id"]
+    assert_nil result["next_cursor"]
+    assert_equal 2, result["results"].length
+    assert_equal "job-1", result.dig("results", 0, "id")
   end
 
   def test_jobs_retrieve_returns_job_details
     stub_request(:get, "https://api.example.com/job/job-456")
-      .to_return(status: 200, body: { id: "job-456", status: "complete", result: {} }.to_json)
+      .to_return(status: 200, body: { id: "job-456", status: "Completed", result: {} }.to_json)
 
     result = @client.jobs.retrieve(job_id: "job-456")
     assert_equal "job-456", result["id"]
-    assert_equal "complete", result["status"]
+    assert_equal "Completed", result["status"]
     assert result.key?("result")
   end
 
@@ -451,6 +464,37 @@ class ResourcesTest < Minitest::Test
     end
     assert_match(/422/, error.message)
     assert_equal 422, error.status
+  end
+
+  def test_parse_sync_raises_rate_limit_error_on_429
+    stub_request(:post, "https://api.example.com/parse")
+      .to_return(status: 429, body: { error: "Rate limit exceeded" }.to_json)
+
+    error = assert_raises(ReductoAI::RateLimitError) do
+      @client.parse.sync(input: "test")
+    end
+    assert_match(/429/, error.message)
+    assert_equal 429, error.status
+  end
+
+  def test_rate_limit_error_is_a_client_error
+    stub_request(:post, "https://api.example.com/parse")
+      .to_return(status: 429, body: { error: "Rate limit exceeded" }.to_json)
+
+    assert_raises(ReductoAI::ClientError) do
+      @client.parse.sync(input: "test")
+    end
+  end
+
+  def test_parse_sync_raises_client_error_on_403
+    stub_request(:post, "https://api.example.com/parse")
+      .to_return(status: 403, body: { error: "Forbidden" }.to_json)
+
+    error = assert_raises(ReductoAI::ClientError) do
+      @client.parse.sync(input: "test")
+    end
+    assert_match(/403/, error.message)
+    assert_equal 403, error.status
   end
 
   def test_parse_sync_raises_server_error_on_500

@@ -27,49 +27,51 @@ end
 - **Split**: Use after parsing when you need logical sections. Provide `split_description` names/rules to segment the parsed document into labeled ranges.
 - **Extract**: Run when you need structured answers (fields, JSON). Supply instructions or schema to pull values from raw input or an existing parse `job_id`.
 - **Edit**: Generate marked-up PDFs using `document_url` plus `edit_instructions` (PDF forms supported via `form_schema`).
-- **Pipeline**: Trigger a saved Studio pipeline with `input` + `pipeline_id` to orchestrate Parse/Split/Extract/Edit in one call.
+- **Pipeline**: The current gem surface remains `steps:`-based for multi-step workflows.
 
 ### Async Operations
 
-All resources support async variants that return a `job_id` for polling:
+Async variants return immediately with a `job_id`. Use `client.jobs.wait(...)` for polling or configure Svix-backed webhooks in your app.
+
+Notes:
+- Reducto prioritizes sync jobs over async jobs.
+- Async results may be deleted on Reducto's normal 12-hour cleanup cadence unless you persist them yourself or opt into `persist_results`.
+- `client.jobs.configure_webhook` returns a Svix portal URL string.
+- `client.jobs.wait` requires either `timeout:` or `max_attempts:` so it cannot poll forever by accident.
+- `client.edit.async` is the exception to the generic async shape: Reducto's `/edit_async` endpoint only accepts top-level `priority` and `webhook`, not async `metadata`.
 
 ```ruby
 client = ReductoAI::Client.new
 
-# Start async parse
-# API Reference: https://docs.reducto.ai/api-reference/parse-async
-job = client.parse.async(input: "https://example.com/large-doc.pdf")
-job_id = job["job_id"]
+job = client.parse.async(
+  input: "https://example.com/large-doc.pdf",
+  output_formats: { markdown: true },
+  async: {
+    priority: false,
+    webhook: { mode: "svix", channels: ["production"] },
+    metadata: { document_id: "doc-123" }
+  },
+  settings: { persist_results: true }
+)
 
-# Response:
-# {
-#   "job_id" => "async-123",
-#   "status" => "processing"
-# }
+# => { "job_id" => "async-123", "status" => "Pending" }
 
-# Poll for completion
-# API Reference: https://docs.reducto.ai/api-reference/get-job
-result = client.jobs.retrieve(job_id: job_id)
+result = client.jobs.wait(job_id: job["job_id"], interval: 2, timeout: 300)
 
-# Response:
-# {
-#   "job_id" => "async-123",
-#   "status" => "complete",
-#   "result" => {...},
-#   "usage" => {"credits" => 1.0}
-# }
+# => { "job_id" => "async-123", "status" => "Completed", "result" => {...} }
 
-# Or configure webhooks for notifications
-# API Reference: https://docs.reducto.ai/api-reference/webhook-portal
-client.jobs.configure_webhook
+portal_url = client.jobs.configure_webhook
+# => "https://dashboard.svix.com/..."
 ```
 
-Available async methods:
-- `client.parse.async(input:, **options)` - [Parse Async API](https://docs.reducto.ai/api-reference/parse-async)
-- `client.extract.async(input:, instructions:, **options)` - [Extract Async API](https://docs.reducto.ai/api-reference/extract-async)
-- `client.split.async(input:, **options)` - [Split Async API](https://docs.reducto.ai/api-reference/split-async)
-- `client.edit.async(input:, instructions:, **options)` - [Edit Async API](https://docs.reducto.ai/api-reference/edit-async)
-- `client.pipeline.async(input:, steps:, **options)` - [Pipeline Async API](https://docs.reducto.ai/api-reference/pipeline-async)
+Available async helpers:
+- `client.parse.async(input:, async:, **options)`
+- `client.extract.async(input:, instructions:, async:, **options)`
+- `client.split.async(input:, async:, **options)`
+- `client.edit.async(input:, instructions:, async:, **options)` where `async:` may only include `priority` and `webhook`
+- `client.pipeline.async(input:, steps:, async:, **options)`
+- `client.jobs.wait(job_id:, interval: 2, timeout: nil, max_attempts: nil, raise_on_failure: true)`
+- `client.jobs.pending?/in_progress?/completing?/completed?/failed?/terminal?`
 
 ### Rails
 
@@ -78,13 +80,37 @@ Create `config/initializers/reducto_ai.rb`:
 ```ruby
 ReductoAI.configure do |c|
   c.api_key = Rails.application.credentials.dig(:reducto, :api_key)
+  c.webhook_secret = Rails.application.credentials.dig(:reducto, :webhook_secret)
   # c.base_url = "https://platform.reducto.ai"
   # c.open_timeout = 5; c.read_timeout = 30
 end
-
-# Optional: override shared client (multi-tenant or custom timeouts)
-# ReductoAI.client = ReductoAI::Client.new(api_key: ..., read_timeout: 10)
 ```
+
+In your host app, own the route/controller/job:
+
+```ruby
+# config/routes.rb
+post "/webhooks/reducto", to: "reducto_webhooks#create"
+```
+
+```ruby
+class ReductoWebhooksController < ActionController::API
+  def create
+    event = ReductoAI::Rails::RequestVerifier.verify!(request)
+
+    return head :ok if WebhookDelivery.exists?(provider: "reducto", delivery_id: event.svix_id)
+
+    WebhookDelivery.create!(provider: "reducto", delivery_id: event.svix_id, job_id: event.job_id)
+    ReductoWebhookJob.perform_later(event.job_id, event.svix_id)
+
+    head :ok
+  rescue ReductoAI::WebhookVerificationError
+    head :unauthorized
+  end
+end
+```
+
+Return 2xx quickly, dedupe on `svix-id`, and fetch/store final results in the background job.
 
 ### Quick Start
 
@@ -99,7 +125,7 @@ job_id = parse["job_id"]
 # Response:
 # {
 #   "job_id" => "abc-123",
-#   "status" => "complete",
+#   "status" => "Completed",
 #   "result" => {...}
 # }
 
@@ -141,7 +167,7 @@ parse = client.parse.sync(input: "https://example.com/invoices.pdf")
 # Response:
 # {
 #   "job_id" => "parse-123",
-#   "status" => "complete",
+#   "status" => "Completed",
 #   "result" => {...}
 # }
 
@@ -362,11 +388,7 @@ job = client.parse.async(input: large_pdf_url)
 job_id = job["job_id"]
 
 # Poll or use webhooks
-loop do
-  result = client.jobs.retrieve(job_id: job_id)
-  break if result["status"] == "complete"
-  sleep 2
-end
+result = client.jobs.wait(job_id: job_id, interval: 2, timeout: 300)
 
 # Then reuse the job_id for split/extract
 split = client.split.sync(input: job_id, split_description: [...])

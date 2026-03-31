@@ -3,6 +3,7 @@
 require "faraday"
 require "json"
 require "faraday/multipart"
+require_relative "resources/async_payload"
 require_relative "resources/parse"
 require_relative "resources/extract"
 require_relative "resources/split"
@@ -176,6 +177,7 @@ module ReductoAI
 
       parsed_body = parse_error_body(body)
       return handle_auth_error(parsed_body, status) if status == 401
+      return handle_rate_limit_error(parsed_body, status) if status == 429
       return handle_client_error(parsed_body, status) if client_error?(status)
       return handle_server_error(parsed_body, status) if server_error?(status)
 
@@ -214,7 +216,7 @@ module ReductoAI
     end
 
     def client_error?(status)
-      [400, 404, 422].include?(status)
+      [400, 403, 404, 422].include?(status)
     end
 
     def server_error?(status)
@@ -223,6 +225,10 @@ module ReductoAI
 
     def handle_auth_error(body, status)
       raise AuthenticationError.new("Unauthorized (401): check API key", status: status, body: body)
+    end
+
+    def handle_rate_limit_error(body, status)
+      raise RateLimitError.new(error_message(status, body), status: status, body: body)
     end
 
     def handle_client_error(body, status)

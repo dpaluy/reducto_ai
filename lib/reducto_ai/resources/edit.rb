@@ -18,6 +18,8 @@ module ReductoAI
     # @note Edit operations consume credits based on document size and
     #   instruction complexity.
     class Edit
+      include AsyncPayload
+
       # @param client [Client] the Reducto API client
       # @api private
       def initialize(client)
@@ -33,7 +35,7 @@ module ReductoAI
       #
       # @return [Hash] Edit results with keys:
       #   * "job_id" [String] - Job identifier
-      #   * "status" [String] - Job status ("succeeded")
+      #   * "status" [String] - Job status ("Completed")
       #   * "result" [Hash] - Contains "document_url" with marked PDF
       #   * "usage" [Hash] - Credit usage details
       #
@@ -64,12 +66,14 @@ module ReductoAI
       #
       # @param input [String, Hash] Document URL or hash with :url key
       # @param instructions [String] Natural language editing instructions
-      # @param async [Boolean, nil] Async mode flag
+      # @param async [Boolean, Hash, nil] Async options. `true` keeps the legacy no-options call,
+      #   while a hash is translated to Reducto's current top-level edit async fields.
+      #   `/edit_async` only accepts `priority` and `webhook`, not generic async metadata.
       # @param options [Hash] Additional editing options
       #
       # @return [Hash] Job status with keys:
       #   * "job_id" [String] - Job identifier for polling
-      #   * "status" [String] - Initial status ("processing")
+      #   * "status" [String] - Initial status ("Pending")
       #
       # @raise [ArgumentError] if input or instructions are nil/empty
       #
@@ -88,8 +92,9 @@ module ReductoAI
           raise ArgumentError, "instructions are required"
         end
 
-        payload = build_payload(input, instructions, options)
-        payload[:async] = async unless async.nil?
+        payload = build_payload(input, instructions, {})
+        payload.merge!(translate_async_options(async))
+        payload.merge!(options.compact)
 
         @client.post("/edit_async", payload)
       end
@@ -102,11 +107,26 @@ module ReductoAI
         { document_url: document_url, edit_instructions: instructions, **options }.compact
       end
 
-      # @private
-      def normalize_input(input)
-        return input unless input.is_a?(Hash)
+      # Edit API uses top-level async keys (priority, webhook) rather than
+      # the nested `async` object used by other resources. This mirrors the
+      # Reducto API design where edit_async accepts these fields at root level.
+      def translate_async_options(async)
+        case async
+        when nil, false, true
+          {}
+        when Hash
+          normalized_async = async.each_with_object({}) do |(key, value), normalized|
+            normalized[key.to_sym] = value
+          end
+          unsupported_keys = normalized_async.keys - %i[priority webhook]
+          unless unsupported_keys.empty?
+            raise ArgumentError, "unsupported async options: #{unsupported_keys.join(", ")}"
+          end
 
-        input[:url] || input["url"] || input
+          normalized_async.compact
+        else
+          raise ArgumentError, "async must be a Hash, true, false, or nil"
+        end
       end
     end
   end
