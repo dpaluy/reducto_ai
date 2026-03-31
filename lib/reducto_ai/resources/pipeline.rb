@@ -20,6 +20,8 @@ module ReductoAI
     #
     # @note Pipeline operations consume credits based on all steps executed.
     class Pipeline
+      include AsyncPayload
+
       # @param client [Client] the Reducto API client
       # @api private
       def initialize(client)
@@ -36,7 +38,7 @@ module ReductoAI
       #
       # @return [Hash] Pipeline results with keys:
       #   * "job_id" [String] - Job identifier
-      #   * "status" [String] - Job status ("succeeded")
+      #   * "status" [String] - Job status ("Completed")
       #   * "result" [Hash] - Contains "steps" array with each step's result
       #   * "usage" [Hash] - Credit usage details
       #
@@ -68,12 +70,13 @@ module ReductoAI
       #
       # @param input [String, Hash] Document URL or hash with :url key
       # @param steps [Array<Hash>] Array of step configurations (same as {#sync})
-      # @param async [Boolean, nil] Async mode flag
+      # @param async [Boolean, Hash, nil] Async options. `true` becomes an empty async payload,
+      #   while a hash is sent as Reducto's nested `async` object.
       # @param options [Hash] Additional pipeline options
       #
       # @return [Hash] Job status with keys:
       #   * "job_id" [String] - Job identifier for polling
-      #   * "status" [String] - Initial status ("processing")
+      #   * "status" [String] - Initial status ("Pending")
       #
       # @raise [ArgumentError] if input or steps are nil/empty
       #
@@ -94,7 +97,7 @@ module ReductoAI
         raise ArgumentError, "steps are required" if steps.nil? || (steps.respond_to?(:empty?) && steps.empty?)
 
         payload = { input: input, steps: steps }
-        payload[:async] = async unless async.nil?
+        apply_async_payload!(payload, async)
         payload.merge!(options.compact)
 
         @client.post("/pipeline_async", payload)

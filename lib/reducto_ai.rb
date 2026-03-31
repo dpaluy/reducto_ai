@@ -3,6 +3,9 @@
 require_relative "reducto_ai/version"
 require_relative "reducto_ai/config"
 require_relative "reducto_ai/errors"
+require_relative "reducto_ai/job_status"
+require_relative "reducto_ai/webhooks/verifier"
+require_relative "reducto_ai/webhooks/event"
 require_relative "reducto_ai/client"
 require_relative "reducto_ai/engine"
 
@@ -24,6 +27,10 @@ require_relative "reducto_ai/engine"
 # @see Client
 # @see Config
 module ReductoAI
+  module Rails
+    autoload :RequestVerifier, "reducto_ai/rails/request_verifier"
+  end
+
   class << self
     # Returns the global configuration instance.
     #

@@ -24,6 +24,8 @@ module ReductoAI
     # @note Extraction operations consume credits based on document complexity
     #   and schema size.
     class Extract
+      include AsyncPayload
+
       # @param client [Client] the Reducto API client
       # @api private
       def initialize(client)
@@ -40,7 +42,7 @@ module ReductoAI
       #
       # @return [Hash] Extraction results with keys:
       #   * "job_id" [String] - Job identifier
-      #   * "status" [String] - Job status ("succeeded")
+      #   * "status" [String] - Job status ("Completed")
       #   * "result" [Hash] - Extracted data matching schema
       #   * "usage" [Hash] - Credit usage details
       #
@@ -74,12 +76,13 @@ module ReductoAI
       #
       # @param input [String, Hash] Document URL or hash with :url key
       # @param instructions [Hash, String] Extraction schema (same as {#sync})
-      # @param async [Boolean, nil] Async mode flag
+      # @param async [Boolean, Hash, nil] Async options. `true` becomes an empty async payload,
+      #   while a hash is sent as Reducto's nested `async` object.
       # @param options [Hash] Additional extraction options
       #
       # @return [Hash] Job status with keys:
       #   * "job_id" [String] - Job identifier for polling
-      #   * "status" [String] - Initial status ("processing")
+      #   * "status" [String] - Initial status ("Pending")
       #
       # @raise [ArgumentError] if input or instructions are nil/empty
       #
@@ -99,7 +102,7 @@ module ReductoAI
         end
 
         payload = build_payload(input, instructions, options)
-        payload[:async] = async unless async.nil?
+        apply_async_payload!(payload, async)
 
         @client.post("/extract_async", payload)
       end
@@ -112,13 +115,6 @@ module ReductoAI
         normalized_instructions = normalize_instructions(instructions)
 
         { input: normalized_input, instructions: normalized_instructions, **options }.compact
-      end
-
-      # @private
-      def normalize_input(input)
-        return input unless input.is_a?(Hash)
-
-        input[:url] || input["url"] || input
       end
 
       # @private

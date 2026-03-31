@@ -38,8 +38,11 @@ module ReductoAI
     # @return [Integer] Request read timeout in seconds (default: 30)
     attr_accessor :read_timeout
 
-    # @return [Boolean] Whether to raise exceptions on API errors (default: true)
-    attr_accessor :raise_exceptions
+    # @return [String, nil] Svix webhook signing secret
+    attr_accessor :webhook_secret
+
+    # @return [Proc, nil] Proc that resolves webhook secret from request headers
+    attr_accessor :webhook_secret_resolver
 
     # @return [Logger] Logger instance for debugging
     attr_writer :logger
@@ -50,7 +53,8 @@ module ReductoAI
       @base_url = ENV.fetch("REDUCTO_BASE_URL", "https://platform.reducto.ai")
       @open_timeout = integer_or_default("REDUCTO_OPEN_TIMEOUT", 5)
       @read_timeout = integer_or_default("REDUCTO_READ_TIMEOUT", 30)
-      @raise_exceptions = true
+      @webhook_secret = ENV.fetch("REDUCTO_WEBHOOK_SECRET", nil)
+      @webhook_secret_resolver = nil
     end
 
     # Returns the logger instance.
@@ -59,7 +63,7 @@ module ReductoAI
     #
     # @return [Logger] the logger instance
     def logger
-      @logger ||= (defined?(Rails) && Rails.respond_to?(:logger) && Rails.logger) || Logger.new($stderr)
+      @logger ||= (defined?(::Rails) && ::Rails.respond_to?(:logger) && ::Rails.logger) || Logger.new($stderr)
     end
 
     private

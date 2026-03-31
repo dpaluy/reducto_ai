@@ -57,6 +57,12 @@ module ReductoAI
   #   # => ReductoAI::ClientError: HTTP 400: Invalid input URL
   class ClientError < Error; end
 
+  # Raised on 429 Too Many Requests responses.
+  #
+  # Indicates API rate limit has been exceeded. Consumers should implement
+  # retry logic with backoff.
+  class RateLimitError < ClientError; end
+
   # Raised on 5xx server errors.
   #
   # Indicates Reducto API internal errors or temporary failures.
@@ -77,4 +83,13 @@ module ReductoAI
   #   client.parse.sync(input: "https://example.com/large-doc.pdf")
   #   # => ReductoAI::NetworkError: Network error: execution expired
   class NetworkError < Error; end
+
+  # Raised when waiting for an async job exceeds the configured timeout or attempt limit.
+  class JobTimeoutError < Error; end
+
+  # Raised when an async job reaches a failed terminal state.
+  class JobFailedError < Error; end
+
+  # Raised when webhook signature verification fails.
+  class WebhookVerificationError < Error; end
 end

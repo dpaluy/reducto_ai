@@ -29,6 +29,8 @@ module ReductoAI
     # @note Each parse operation consumes credits based on document complexity.
     #   See Reducto documentation for pricing details.
     class Parse
+      include AsyncPayload
+
       # @param client [Client] the Reducto API client
       # @api private
       def initialize(client)
@@ -48,7 +50,7 @@ module ReductoAI
       #
       # @return [Hash] Parsed document with keys:
       #   * "job_id" [String] - Job identifier
-      #   * "status" [String] - Job status ("succeeded")
+      #   * "status" [String] - Job status ("Completed")
       #   * "result" [Hash] - Parsed content by format (e.g., "markdown", "html")
       #   * "usage" [Hash] - Credit usage details
       #
@@ -76,12 +78,13 @@ module ReductoAI
       # Returns immediately with a job_id. Poll with {Jobs#retrieve} to get results.
       #
       # @param input [String, Hash] Document URL or hash with :url key
-      # @param async [Boolean, nil] Async mode flag (defaults to true if not provided)
+      # @param async [Boolean, Hash, nil] Async options. `true` becomes an empty async payload,
+      #   while a hash is sent as Reducto's nested `async` object.
       # @param options [Hash] Additional parsing options (same as {#sync})
       #
       # @return [Hash] Job status with keys:
       #   * "job_id" [String] - Job identifier for polling
-      #   * "status" [String] - Initial status ("processing")
+      #   * "status" [String] - Initial status ("Pending")
       #
       # @raise [ArgumentError] if input is nil
       #
@@ -92,30 +95,21 @@ module ReductoAI
       #   # Poll for completion
       #   loop do
       #     status = client.jobs.retrieve(job_id: job_id)
-      #     break if status["status"] == "succeeded"
+      #     break if client.jobs.completed?(status)
       #     sleep 2
       #   end
       #
       # @see Jobs#retrieve
-      # @see https://docs.reducto.ai/api-reference/parse-async Reducto Async Parse
+      # @see https://docs.reducto.ai/api-reference/async-parse Reducto Async Parse
       def async(input:, async: nil, **options)
         raise ArgumentError, "input is required" if input.nil?
 
         normalized_input = normalize_input(input)
         payload = { input: normalized_input }
-        payload[:async] = async unless async.nil?
+        apply_async_payload!(payload, async)
         payload.merge!(options.compact)
 
         @client.post("/parse_async", payload)
-      end
-
-      private
-
-      # @private
-      def normalize_input(input)
-        return input unless input.is_a?(Hash)
-
-        input[:url] || input["url"] || input
       end
     end
   end

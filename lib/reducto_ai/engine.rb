@@ -7,7 +7,7 @@ module ReductoAI
   # loading and configuration within Rails applications.
   #
   # @api private
-  if defined?(Rails)
+  if defined?(::Rails)
     class Engine < ::Rails::Engine
       isolate_namespace ReductoAI
     end

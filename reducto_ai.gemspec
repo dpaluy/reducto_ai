@@ -38,6 +38,8 @@ Gem::Specification.new do |spec|
   # Include documentation files
   spec.extra_rdoc_files = Dir["README.md", "CHANGELOG.md", "LICENSE.txt"]
 
+  spec.add_dependency "base64"
   spec.add_dependency "faraday", "~> 2.9"
   spec.add_dependency "faraday-multipart", "~> 1.0"
+  spec.add_dependency "svix", "~> 1.0"
 end

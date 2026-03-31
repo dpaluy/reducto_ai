@@ -17,6 +17,8 @@ class ConfigurationTest < Minitest::Test
     assert_equal "https://platform.reducto.ai", config.base_url
     assert_equal 5, config.open_timeout
     assert_equal 30, config.read_timeout
+    assert_nil config.webhook_secret
+    assert_nil config.webhook_secret_resolver
   end
 
   def test_configure_block

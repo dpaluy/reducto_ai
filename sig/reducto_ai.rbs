@@ -1,4 +1,96 @@
 module ReductoAI
   VERSION: String
-  # See the writing guide of rbs: https://github.com/ruby/rbs#guides
+
+  def self.config: () -> Config
+  def self.configure: () { (Config) -> void } -> void
+  def self.reset_configuration!: () -> void
+
+  class Config
+    attr_accessor api_key: String?
+    attr_accessor base_url: String
+    attr_accessor open_timeout: Integer
+    attr_accessor read_timeout: Integer
+    attr_accessor webhook_secret: String?
+    attr_accessor webhook_secret_resolver: Proc?
+    attr_writer logger: untyped
+
+    def logger: () -> untyped
+  end
+
+  class Error < StandardError
+    attr_reader status: Integer?
+    attr_reader body: untyped
+  end
+
+  class AuthenticationError < Error
+  end
+
+  class ClientError < Error
+  end
+
+  class RateLimitError < ClientError
+  end
+
+  class ServerError < Error
+  end
+
+  class NetworkError < Error
+  end
+
+  class JobTimeoutError < Error
+  end
+
+  class JobFailedError < Error
+  end
+
+  class WebhookVerificationError < Error
+  end
+
+  module Resources
+    class Jobs
+      def version: () -> Hash[untyped, untyped]
+      def list: (?status: String?, ?limit: Integer?, ?offset: Integer?) -> Hash[untyped, untyped]
+      def cancel: (job_id: String) -> Hash[untyped, untyped]
+      def retrieve: (job_id: String) -> Hash[untyped, untyped]
+      def upload: (file: untyped, ?extension: String?) -> Hash[untyped, untyped]
+      def normalize_status: (String | Hash[untyped, untyped] | untyped) -> String?
+      def pending?: (String | Hash[untyped, untyped] | untyped) -> bool
+      def in_progress?: (String | Hash[untyped, untyped] | untyped) -> bool
+      def completing?: (String | Hash[untyped, untyped] | untyped) -> bool
+      def completed?: (String | Hash[untyped, untyped] | untyped) -> bool
+      def failed?: (String | Hash[untyped, untyped] | untyped) -> bool
+      def terminal?: (String | Hash[untyped, untyped] | untyped) -> bool
+      def wait: (job_id: String, ?interval: Numeric, timeout: Numeric, ?max_attempts: Integer?, ?raise_on_failure: bool) -> Hash[untyped, untyped]
+               | (job_id: String, ?interval: Numeric, ?timeout: Numeric?, max_attempts: Integer, ?raise_on_failure: bool) -> Hash[untyped, untyped]
+      def configure_webhook: () -> String
+    end
+  end
+
+  module Webhooks
+    class Verifier
+      def self.verify!: (payload: String, headers: Hash[untyped, untyped], ?secret: String?) -> Hash[Symbol, untyped]
+    end
+
+    class Event
+      attr_reader payload: Hash[String, untyped]
+      attr_reader headers: Hash[String, untyped]
+
+      def self.parse: (String | Hash[untyped, untyped], ?headers: Hash[untyped, untyped]) -> Event
+      def initialize: (Hash[untyped, untyped], ?headers: Hash[untyped, untyped]) -> void
+      def svix_id: () -> String?
+      def job_id: () -> String?
+      def status: () -> String?
+      def metadata: () -> Hash[String, untyped]
+      def normalized_status: () -> String?
+      def completed?: () -> bool
+      def failed?: () -> bool
+      def to_h: () -> Hash[String, untyped]
+    end
+  end
+
+  module Rails
+    class RequestVerifier
+      def self.verify!: (untyped request, ?secret: String?) -> Webhooks::Event
+    end
+  end
 end

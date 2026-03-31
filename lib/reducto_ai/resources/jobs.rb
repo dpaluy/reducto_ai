@@ -13,7 +13,7 @@ module ReductoAI
     #
     #   loop do
     #     status = client.jobs.retrieve(job_id: job["job_id"])
-    #     break if status["status"] == "succeeded"
+    #     break if client.jobs.completed?(status)
     #     sleep 2
     #   end
     #   result = status["result"]
@@ -23,6 +23,8 @@ module ReductoAI
     #   document_url = upload_result["url"]
     #   client.parse.sync(input: document_url)
     class Jobs
+      include ReductoAI::JobStatus
+
       # @param client [Client] the Reducto API client
       # @api private
       def initialize(client)
@@ -43,7 +45,7 @@ module ReductoAI
       # Lists jobs with optional filtering.
       #
       # @param options [Hash] Query parameters for filtering
-      # @option options [String] :status Filter by job status ("processing", "succeeded", "failed")
+      # @option options [String] :status Filter by raw job status returned by Reducto
       # @option options [Integer] :limit Maximum number of jobs to return
       # @option options [Integer] :offset Pagination offset
       #
@@ -59,7 +61,8 @@ module ReductoAI
       # @see https://docs.reducto.ai/api-reference/jobs
       def list(**options)
         params = options.compact
-        @client.request(:get, "/jobs", params: params)
+        response = @client.request(:get, "/jobs", params: params)
+        normalize_job_list(response)
       end
 
       # Cancels a running async job.
@@ -76,7 +79,7 @@ module ReductoAI
       #
       # @see https://docs.reducto.ai/api-reference/cancel
       def cancel(job_id:)
-        raise ArgumentError, "job_id is required" if job_id.nil? || job_id.to_s.strip.empty?
+        validate_job_id!(job_id)
 
         @client.request(:post, "/cancel/#{job_id}")
       end
@@ -90,9 +93,9 @@ module ReductoAI
       #
       # @return [Hash] Job status with keys:
       #   * "job_id" [String] - Job identifier
-      #   * "status" [String] - Current status ("processing", "succeeded", "failed")
-      #   * "result" [Hash] - Results (only present when status is "succeeded")
-      #   * "error" [String] - Error message (only present when status is "failed")
+      #   * "status" [String] - Current raw Reducto status (for example "Pending", "Completed", "Failed")
+      #   * "result" [Hash] - Results (only present when the job completed)
+      #   * "error" [String] - Error message (only present when the job failed)
       #
       # @raise [ArgumentError] if job_id is nil or empty
       # @raise [ClientError] if job doesn't exist
@@ -100,13 +103,13 @@ module ReductoAI
       # @example Poll until complete
       #   loop do
       #     status = client.jobs.retrieve(job_id: job_id)
-      #     break if %w[succeeded failed].include?(status["status"])
+      #     break if client.jobs.terminal?(status)
       #     sleep 2
       #   end
       #
       # @see https://docs.reducto.ai/api-reference/job
       def retrieve(job_id:)
-        raise ArgumentError, "job_id is required" if job_id.nil? || job_id.to_s.strip.empty?
+        validate_job_id!(job_id)
 
         @client.request(:get, "/job/#{job_id}")
       end
@@ -149,17 +152,106 @@ module ReductoAI
 
       # Configures webhook notifications for async jobs.
       #
-      # @return [Hash] Webhook configuration result
+      # @return [String] Svix portal URL for webhook configuration
       #
       # @example
       #   client.jobs.configure_webhook
       #
-      # @see https://docs.reducto.ai/api-reference/configure-webhook
+      # @see https://docs.reducto.ai/api-reference/webhook-portal
       def configure_webhook
-        @client.request(:post, "/configure_webhook")
+        response = @client.request(:post, "/configure_webhook")
+        normalize_webhook_portal_url(response)
+      end
+
+      def wait(job_id:, interval: 2, timeout: nil, max_attempts: nil, raise_on_failure: true)
+        validate_wait_arguments!(interval: interval, timeout: timeout, max_attempts: max_attempts)
+
+        started_at = monotonic_time
+        attempts = 0
+
+        loop do
+          attempts += 1
+          response = retrieve(job_id: job_id)
+          terminal_response = resolve_terminal_response(job_id, response, raise_on_failure)
+          return terminal_response if terminal_response
+
+          raise_if_attempt_limit_reached!(job_id, response, attempts, max_attempts)
+          raise_if_timeout_exceeded!(job_id, response, started_at, timeout)
+          sleep(interval)
+        end
       end
 
       private
+
+      def validate_job_id!(job_id)
+        raise ArgumentError, "job_id is required" if job_id.nil? || job_id.to_s.strip.empty?
+        raise ArgumentError, "job_id contains invalid characters" unless job_id.to_s.match?(/\A[\w\-.]+\z/)
+      end
+
+      def validate_wait_arguments!(interval:, timeout:, max_attempts:)
+        validate_wait_interval!(interval)
+        validate_wait_timeout!(timeout)
+        validate_wait_max_attempts!(max_attempts)
+        validate_wait_bounds!(timeout, max_attempts)
+      end
+
+      def validate_wait_interval!(interval)
+        raise ArgumentError, "interval must be non-negative" if interval.negative?
+      end
+
+      def validate_wait_timeout!(timeout)
+        raise ArgumentError, "timeout must be non-negative" if timeout&.negative?
+      end
+
+      def validate_wait_max_attempts!(max_attempts)
+        raise ArgumentError, "max_attempts must be positive" if max_attempts && max_attempts < 1
+      end
+
+      def validate_wait_bounds!(timeout, max_attempts)
+        raise ArgumentError, "timeout or max_attempts is required" if timeout.nil? && max_attempts.nil?
+      end
+
+      def resolve_terminal_response(job_id, response, raise_on_failure)
+        return response if completed?(response)
+        return nil unless failed?(response)
+        return response unless raise_on_failure
+
+        raise JobFailedError.new(response["error"] || "Job #{job_id} failed", body: response)
+      end
+
+      def raise_if_attempt_limit_reached!(job_id, response, attempts, max_attempts)
+        return unless max_attempts && attempts >= max_attempts
+
+        raise JobTimeoutError.new("Timed out waiting for job #{job_id}", body: response)
+      end
+
+      def raise_if_timeout_exceeded!(job_id, response, started_at, timeout)
+        return unless timeout && (monotonic_time - started_at) >= timeout
+
+        raise JobTimeoutError.new("Timed out waiting for job #{job_id}", body: response)
+      end
+
+      def monotonic_time
+        Process.clock_gettime(Process::CLOCK_MONOTONIC)
+      end
+
+      def normalize_job_list(response)
+        return response if response.is_a?(Hash)
+        return { "results" => response, "next_cursor" => nil } if response.is_a?(Array)
+
+        response
+      end
+
+      def normalize_webhook_portal_url(response)
+        return response if response.is_a?(String)
+
+        if response.is_a?(Hash)
+          portal_url = response["portal_url"] || response[:portal_url] || response["url"] || response[:url]
+          return portal_url if portal_url.is_a?(String)
+        end
+
+        raise ServerError.new("Unexpected webhook portal response", body: response)
+      end
 
       # @private
       def build_upload_io(file)
@@ -173,9 +265,8 @@ module ReductoAI
                      else
                        "upload"
                      end
-
         end
-        Faraday::UploadIO.new(file, "application/octet-stream", filename)
+        Faraday::Multipart::FilePart.new(file, "application/octet-stream", filename)
       end
     end
   end

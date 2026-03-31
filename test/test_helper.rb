@@ -5,6 +5,10 @@ require "reducto_ai"
 
 require "minitest/autorun"
 require "webmock/minitest"
+require "base64"
+require "json"
+require "svix"
+require_relative "support/webhook_fixture"
 
 module TestConfig
   def setup_config
