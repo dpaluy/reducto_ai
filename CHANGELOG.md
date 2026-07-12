@@ -1,5 +1,10 @@
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-12
+
+### Changed
+- Updated Faraday, Yard, RuboCop, Addressable, Svix, and Minitest dependencies.
+
 ## [0.2.0] - 2026-03-30
 
 ### Added
