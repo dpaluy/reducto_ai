@@ -85,7 +85,7 @@ GEM
       prism (~> 1.7)
     ruby-progressbar (1.13.0)
     stringio (3.2.0)
-    svix (1.89.0)
+    svix (1.90.0)
     tsort (0.2.0)
     unicode-display_width (3.2.0)
       unicode-emoji (~> 4.1)
