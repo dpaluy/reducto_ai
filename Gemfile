@@ -10,7 +10,7 @@ gem "rake", "~> 13.4"
 
 gem "minitest", "~> 6.0"
 
-gem "rubocop", "~> 1.86"
+gem "rubocop", "~> 1.88"
 gem "yard", "~> 0.9"
 
 group :test do
