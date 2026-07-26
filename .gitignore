@@ -16,3 +16,4 @@ CLAUDE.md
 .repoprompt/
 prompt-exports/
 reports/
+/Gemfile.lock
