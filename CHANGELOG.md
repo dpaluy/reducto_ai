@@ -4,7 +4,7 @@
 
 ### Changed
 - Updated YARD to 0.9.44, Rake to 13.4.2, IRB to 1.18.0, Minitest to 6.0.6, and RuboCop to 1.88.2.
-- Refreshed the development lockfile after merging the complete dependency queue.
+- Updated the development dependencies after merging the complete dependency queue.
 
 ## [0.2.2] - 2026-07-12
 
