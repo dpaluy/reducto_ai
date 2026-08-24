@@ -41,5 +41,5 @@ Gem::Specification.new do |spec|
   spec.add_dependency "base64"
   spec.add_dependency "faraday", "~> 2.9"
   spec.add_dependency "faraday-multipart", "~> 1.0"
-  spec.add_dependency "svix", "~> 1.0"
+  spec.add_dependency "svix", ">= 1", "< 3"
 end
