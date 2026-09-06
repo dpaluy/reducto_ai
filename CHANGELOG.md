@@ -1,5 +1,10 @@
 ## [Unreleased]
 
+## [0.2.4] - 2026-09-06
+
+### Changed
+- Updated Svix support from the 1.x series to 2.x and preserved parsed webhook verification payloads.
+
 ## [0.2.3] - 2026-07-26
 
 ### Changed
