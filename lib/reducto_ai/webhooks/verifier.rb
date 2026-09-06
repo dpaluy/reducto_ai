@@ -1,5 +1,6 @@
 # frozen_string_literal: true
 
+require "json"
 require "svix"
 
 module ReductoAI
@@ -12,7 +13,9 @@ module ReductoAI
 
           raise WebhookVerificationError, "webhook secret is required" if resolved_secret.to_s.strip.empty?
 
-          build_webhook(resolved_secret).verify(payload.to_s, normalized_headers)
+          payload_string = payload.to_s
+          build_webhook(resolved_secret).verify(payload_string, normalized_headers)
+          JSON.parse(payload_string, symbolize_names: true)
         rescue Svix::WebhookVerificationError => e
           raise WebhookVerificationError, e.message
         end
